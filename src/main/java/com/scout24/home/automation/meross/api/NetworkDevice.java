@@ -1,4 +1,4 @@
-package com.scout24.home.automation.meross_iot.model;
+package com.scout24.home.automation.meross.api;
 
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;

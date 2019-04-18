@@ -1,4 +1,4 @@
-package com.scout24.home.automation.meross_iot;
+package com.scout24.home.automation.meross.api;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -6,8 +6,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
-import com.scout24.home.automation.meross_iot.model.AttachedDevice;
-import com.scout24.home.automation.meross_iot.model.Device;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;

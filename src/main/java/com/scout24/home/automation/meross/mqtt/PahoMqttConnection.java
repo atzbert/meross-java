@@ -1,51 +1,36 @@
-package com.scout24.home.automation.meross_iot.supported_devices;
+package com.scout24.home.automation.meross.mqtt;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.google.common.collect.ImmutableMap;
-import lombok.Getter;
-import lombok.Setter;
 import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
 import org.eclipse.paho.client.mqttv3.MqttCallback;
 import org.eclipse.paho.client.mqttv3.MqttClient;
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.eclipse.paho.client.mqttv3.MqttException;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
 
-import static com.scout24.home.automation.meross_iot.supported_devices.Abilities.TOGGLE;
-import static com.scout24.home.automation.meross_iot.supported_devices.Abilities.TOGGLEX;
 import static org.eclipse.paho.client.mqttv3.MqttConnectOptions.MQTT_VERSION_3_1_1;
 import static org.springframework.util.DigestUtils.md5DigestAsHex;
 
 /**
  * Initially created by Tino on 16.04.19.
  */
+@Slf4j
 public abstract class PahoMqttConnection extends MqttConnection implements MqttCallback {
 
-    protected Logger log = LoggerFactory.getLogger(getClass().getName());
-    @Getter
-    @Setter
-    protected ClientStatus status;
-    ClientStatus clientstatus = null;
     //Paho mqtt client object
     private MqttClient mqttclient = null;
 
-    IMqttDeliveryToken ackresponse = null;
-
-    public PahoMqttConnection(String key, Long userid) {
-        super(key, userid, domain, port);
-        this.domain = "eu-iot.meross.com";
+    public PahoMqttConnection(String key, Long userid, String token, String uuid, String domain) {
+        super(key, userid, token, uuid, domain);
     }
 
     @Override
@@ -86,17 +71,17 @@ public abstract class PahoMqttConnection extends MqttConnection implements MqttC
     }
 
     @Override
-    protected void connectToPahoBroker() throws MqttException {
+    protected void connectToBroker() throws MqttException {
         //Password is calculated as the MD5 of USERID concatenated with KEY
-        String clearpwd = this.userid + this.key;
+        String clearpwd = this.userId + this.key;
         String hashedpassword = md5DigestAsHex(clearpwd.getBytes());
         mqttclient = new MqttClient("ssl://" + this.domain + ":" + this.port, clientid);
         mqttclient.setCallback(this);
         final MqttConnectOptions options = new MqttConnectOptions();
         options.setMqttVersion(MQTT_VERSION_3_1_1);
-        //Avoid login if userid is None
-        if (this.userid != null) {
-            options.setUserName(this.userid);
+        //Avoid login if userId is None
+        if (this.userId != null) {
+            options.setUserName(this.userId);
             options.setPassword(hashedpassword.toCharArray());
         }
         this.setStatus(ClientStatus.CONNECTING);
@@ -106,42 +91,36 @@ public abstract class PahoMqttConnection extends MqttConnection implements MqttC
     }
 
     @Override
+    protected Map executecmd(String method, String namespace, Map payload, long timeout) {
+        return null;
+    }
+
+    @Override
     public void connectionLost(Throwable throwable) {
 
     }
 
     @Override
     public void deliveryComplete(IMqttDeliveryToken iMqttDeliveryToken) {
-        this.ackresponse = iMqttDeliveryToken;
-        log.debug("Received ACK...");
-        System.out.println("Received ACK...");
-        if(!status.equals(ClientStatus.SUBSCRIBED)){
-            this.waitingsubscribersqueue.signal();
-        } else {
-            this.waitingmessageackqueue.signal();
+        try {
+            log.debug("Received ACK...");
+            System.out.println("Received ACK...");
+            this.ackresponse = iMqttDeliveryToken.getResponse().getPayload();
+            if(!clientStatus.equals(ClientStatus.SUBSCRIBED)){
+                this.waitingsubscribersqueue.signal();
+            } else {
+                this.waitingmessageackqueue.signal();
+            }
+        } catch (MqttException e) {
+            e.printStackTrace();
         }
+
     }
 
     @Override
     public void messageArrived(String topic, MqttMessage mqttMessage) throws Exception {
-        Map message = mapper.readValue(mqttMessage.getPayload(), Map.class);
-        Map<String, String> header = (Map) message.get("header");
-
-        String stringToHash = String.format("%s%s%s", header.get("messageId"), this.key, header.get("timestamp"));
-        String expected_signature = md5DigestAsHex(stringToHash.getBytes(StandardCharsets.UTF_8)).toLowerCase();
-
-        if (!header.get("sign").equals(expected_signature)) {
-            throw new MQTTException("The signature did not match!");
-        }
-
-        //If the message is the RESP for some previous action, process return the control to the "stopped" method.
-        if (this.messageFromSelf(message)) {
-            if (header.get("method").equals("PUSH") && header.containsKey("namespace")) {
-                this.handleNamespacePayload(header.get("namespace"), (Map) message.get("payload"));
-            } else {
-                log.warn("The following message was unhandled: " + message);
-            }
-        }
+        Message message = mapper.readValue(mqttMessage.getPayload(), Message.class);
+        handleMessagePayload(message);
 
     }
 
@@ -175,39 +154,8 @@ public abstract class PahoMqttConnection extends MqttConnection implements MqttC
         }
     }
 
-    protected void setStatus(ClientStatus status) {
-        this.clientstatus = status;
-    }
-
-    protected abstract void handleNamespacePayload(String namespace, Map payload);
-
-    protected boolean messageFromSelf(Map message) {
-        try {
-            if (message.containsKey("header")) {
-                final String header = (String) message.get("header");
-                return header.split("/")[2].equals(this.uuid);
-            }
-        } catch (Exception e) {
-            log.warn(e.getMessage());
-        }
-        return false;
-    }
-
     public ClientStatus getStatus() {
-        return this.status;
+        return this.clientStatus;
     }
 
-    public enum ClientStatus {
-        INITIALIZED(1),
-        CONNECTING(2),
-        CONNECTED(3),
-        SUBSCRIBED(4),
-        CONNECTIONDROPPED(5);
-        private int status;
-
-        ClientStatus(int status) {
-
-            this.status = status;
-        }
-    }
 }

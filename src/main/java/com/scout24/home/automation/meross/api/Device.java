@@ -1,4 +1,4 @@
-package com.scout24.home.automation.meross_iot.model;
+package com.scout24.home.automation.meross.api;
 
 import lombok.Data;
 
@@ -9,10 +9,10 @@ import java.util.Map;
 @Data
 public class Device {
     private String uuid;
-    private float onlineStatus;
+    private long onlineStatus;
     private String devName;
     private String devIconId;
-    private float bindTime;
+    private long bindTime;
     private String deviceType;
     private String subType;
     private List<Map> channels = new ArrayList <> ();
@@ -20,7 +20,7 @@ public class Device {
     private String fmwareVersion;
     private String hdwareVersion;
     private String userDevIcon;
-    private float iconType;
+    private int iconType;
     private String skillNumber;
     private String domain;
     private String reservedDomain;

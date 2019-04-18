@@ -1,4 +1,4 @@
-package com.scout24.home.automation.meross_iot.supported_devices;
+package com.scout24.home.automation.meross.mqtt;
 
 /**
  * Initially created by Tino on 15.04.19.
