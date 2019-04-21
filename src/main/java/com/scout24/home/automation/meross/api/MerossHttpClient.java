@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
+import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -21,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+@Slf4j
 public class MerossHttpClient {
     public static final String _SECRET = "23x17ahWarFH6w29";
     public static final String _MEROSS_URL = "https://iot.meross.com";
@@ -29,12 +32,17 @@ public class MerossHttpClient {
     public static final String _DEV_LIST = _MEROSS_URL + "/v1/Device/devList";
     private static ObjectMapper mapper = new ObjectMapper();
 
+    @Getter
     private String token;
+    @Getter
     private String key;
+    @Getter
     private long userId;
 
+    @Getter
     private String email;
     private String password;
+    @Getter
     private boolean authenticated;
     private String userEmail;
 
@@ -135,7 +143,7 @@ public class MerossHttpClient {
                 if (onlineOnly && device.getOnlineStatus() != 1) {
                     continue;
                 }
-                AttachedDevice wrapped = build_wrapper(this.token, this.key, this.userId, device);
+                AttachedDevice wrapped = wrapIt(this.token, this.key, this.userId, device);
                 supportedDevices.add(wrapped);
             }
         } catch (AuthenticatedPostException | UnauthorizedException e) {
@@ -144,7 +152,23 @@ public class MerossHttpClient {
         return supportedDevices;
     }
 
-    private AttachedDevice build_wrapper(String token, String key, long userid, Device device) {
+    public Map<String,AttachedDevice> mapSupportedDevices(boolean onlineOnly){
+        Map<String, AttachedDevice> supportedDevices = Maps.newLinkedHashMap();
+        try {
+            for (Device device : listDevices()) {
+                if (onlineOnly && device.getOnlineStatus() != 1) {
+                    continue;
+                }
+                AttachedDevice wrapped = wrapIt(this.token, this.key, this.userId, device);
+                supportedDevices.put(device.getUuid(), wrapped);
+            }
+        } catch (AuthenticatedPostException | UnauthorizedException e) {
+            log.error(e.getMessage(), e);
+        }
+        return supportedDevices;
+    }
+
+    private AttachedDevice wrapIt(String token, String key, long userid, Device device) {
         return new AttachedDevice(device, token, key, userid);
     }
 

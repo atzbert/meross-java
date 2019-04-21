@@ -3,30 +3,35 @@ package com.scout24.home.automation.meross.api;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.util.ArrayList;
 import java.util.Map;
 
 @Data
 @JsonIgnoreProperties(ignoreUnknown = true)
+@NoArgsConstructor
 public class NetworkDevice {
-    All all;
 
+    private All all;
 
     @Data
-    public class All {
+    @NoArgsConstructor
+    public static class All {
         private System system;
         private Digest digest;
         private Map control;
     }
     @Data
-    public class Digest {
-        private ArrayList< Object > togglex = new ArrayList < Object > ();
+    @NoArgsConstructor
+    public static class Digest {
+        private ArrayList< Object > togglex = new ArrayList <> ();
         private ArrayList < Object > triggerx = new ArrayList < Object > ();
         private ArrayList < Object > timerx = new ArrayList < Object > ();
     }
     @Data
-    public class System {
+    @NoArgsConstructor
+    public static class System {
         private Firmware firmware;
         private Hardware hardware;
         private Online online;
@@ -37,18 +42,20 @@ public class NetworkDevice {
         }
     }
     @Data
-    public class Time {
+    @NoArgsConstructor
+    public static class Time {
         private String timezone;
         private long timestamp;
         private ArrayList < Integer[] > timeRule = new ArrayList<>();
-
     }
     @Data
-    public class Online {
+    @NoArgsConstructor
+    public static class Online {
         private int status;
     }
     @Data
-    public class Hardware {
+    @NoArgsConstructor
+    public static class Hardware {
         private String version;
         private String chipType;
         private String macAddress;
@@ -57,7 +64,8 @@ public class NetworkDevice {
         private String type;
     }
     @Data
-    public class Firmware {
+    @NoArgsConstructor
+    public static class Firmware {
         private String version;
         private String innerIp;
         private long userId;
@@ -65,7 +73,5 @@ public class NetworkDevice {
         private String compileTime;
         private int port;
         private String server;
-
-
     }
 }

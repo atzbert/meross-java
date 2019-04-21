@@ -1,99 +1,220 @@
 package com.scout24.home.automation.meross.mqtt;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.scout24.home.automation.meross.api.AttachedDevice;
-import lombok.extern.slf4j.Slf4j;
-import org.eclipse.paho.client.mqttv3.MqttException;
+import com.hivemq.client.mqtt.datatypes.MqttQos;
+import com.hivemq.client.mqtt.mqtt3.Mqtt3AsyncClient;
+import com.hivemq.client.mqtt.mqtt3.Mqtt3BlockingClient;
+import com.hivemq.client.mqtt.mqtt3.Mqtt3Client;
+import com.hivemq.client.mqtt.mqtt3.message.connect.Mqtt3ConnectBuilder;
+import com.hivemq.client.mqtt.mqtt3.message.connect.connack.Mqtt3ConnAck;
+import com.hivemq.client.mqtt.mqtt3.message.publish.Mqtt3Publish;
+import com.hivemq.client.mqtt.mqtt3.message.subscribe.Mqtt3Subscribe;
+import lombok.Getter;
+import lombok.SneakyThrows;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.nio.charset.StandardCharsets;
+import java.nio.charset.Charset;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.locks.Condition;
+import java.util.Random;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Consumer;
 
+import static com.hivemq.client.mqtt.MqttGlobalPublishFilter.ALL;
+import static com.hivemq.client.mqtt.MqttGlobalPublishFilter.SUBSCRIBED;
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.springframework.util.DigestUtils.md5DigestAsHex;
 
 /**
  * Initially created by Tino on 16.04.19.
  */
-@Slf4j
-public abstract class MqttConnection {
+public class MqttConnection {
+
     static final long SHORT_TIMEOUT = 5;
     static final long LONG_TIMEOUT = 30;
-    static final ReentrantLock WAITING_MESSAGE_ACL_LOCK = new ReentrantLock();
-    static final ReentrantLock WAITING_SUBSCRIBER_LOCK = new ReentrantLock();
     static ObjectMapper mapper = new ObjectMapper();
     protected Lock statuslock = new ReentrantLock();
-    protected AttachedDevice device;
     protected byte[] ackresponse = null;
-
-    String key = null;
-    String userId = null;
-    String token;
-    String uuid = null;
-    String appid = null;
-    String domain = null;
-    int port = 2001;
-    String clientid = null;
-
-    //Topic name where the client should publish to its commands. Every client should have a dedicated one.
-    String clientrequesttopic = null;
-    //Topic name in which the client retrieves its own responses from server.
-    String clientresponsetopic = null;
+    Logger log = LoggerFactory.getLogger(getClass().getName());
     //Topic where important notifications are pushed (needed if any other client is dealing with the same device)
     String usertopic = null;
-    //Waiting condition used to wait for command ACKs
-    Condition waitingmessageackqueue = WAITING_MESSAGE_ACL_LOCK.newCondition();
-    Condition waitingsubscribersqueue = WAITING_SUBSCRIBER_LOCK.newCondition();
-    String waitingmessageid = null;
-    ClientStatus clientStatus = null;
-    private volatile AtomicInteger subscriptioncount = new AtomicInteger(0);
 
-    public MqttConnection(String key, Long userId, String token, String uuid, String domain) {
+
+//    private Mqtt3Client mqtt3Client;
+    private Mqtt3BlockingClient blockingClient;
+    private Mqtt3AsyncClient asyncClient;
+    private String key = null;
+    private String userId = null;
+    private String token;
+    private String uuid = null;
+    @Getter
+    private String appId = null;
+    private String domain = null;
+    private int port = 2001;
+    private String clientid = null;
+    private String clientResponseTopic;
+
+    public MqttConnection(String key, Long userid, String token, String domain) throws MQTTException {
         this.key = key;
-        this.userId = userId + "";
+        this.userId = userid + "";
         this.token = token;
-        this.uuid = uuid;
         this.usertopic = "/app/" + this.userId + "/subscribe";
-        this.domain = domain!=null? domain : "eu-iot.meross.com";
+        this.domain = domain;
+        this.generateFClientandAppId();
+        this.clientResponseTopic = "/app/" + userId+ "-" + appId + "/subscribe";
+        this.connectToBroker();
+        this.subscribeToTopic(this.usertopic);
+        this.subscribeToTopic(this.clientResponseTopic);
     }
 
-    protected abstract void subscribeToTopics() throws MqttException;
+    protected MqttConnection() {
 
-    protected abstract void connectToBroker() throws MqttException;
-
-    protected void generateFClientandAppId() {
-        String stringToHash = String.format("%s%s", "API", this.uuid);
-        this.appid = md5DigestAsHex(stringToHash.getBytes(StandardCharsets.UTF_8));
-        this.clientid = "app:" + appid;
     }
 
-    void waitForStatus(ClientStatus status) throws MQTTException {
-        boolean ok = false;
-        while (!ok) {
-            try {
-                if (!this.statuslock.tryLock(SHORT_TIMEOUT, TimeUnit.SECONDS)) {
-                    throw new MQTTException("TimeoutError");
-                }
-                ok = (status == this.clientStatus);
-                this.statuslock.unlock();
-            } catch (InterruptedException e) {
-                throw new MQTTException(e);
-            }
+    public void connectToBroker() throws MQTTException {
+        //Password is calculated as the MD5 of USERID concatenated with KEY
+        String clearpwd = this.userId + this.key;
+        String hashedpassword = md5DigestAsHex(clearpwd.getBytes());
+
+        Mqtt3Client mqtt3Client = Mqtt3Client.builder()
+                .identifier(clientid)
+                .serverHost(this.domain)
+                .serverPort(this.port)
+                .useSslWithDefaultConfig()
+                .build();
+        final Mqtt3ConnectBuilder.Send<Mqtt3ConnAck> send;
+
+        if (this.userId != null) {
+            blockingClient = mqtt3Client.toBlocking();
+            asyncClient = mqtt3Client.toAsync();
+            send = blockingClient.connectWith()
+                    .simpleAuth()
+                    .username(this.userId)
+                    .password(hashedpassword.getBytes())
+                    .applySimpleAuth();
+        } else {
+            send = mqtt3Client.toBlocking().connectWith();
+        }
+        final Mqtt3ConnAck ack = send.send();
+    }
+
+    protected synchronized Map executecmd(String method, String namespace, Map payload,
+                                          String clientRequestTopic) {
+        try {
+            mqttMessage(method, namespace, clientRequestTopic, payload);
+        } catch (Exception e) {
+            log.error("Error executing command for " + method, e);
+        }
+        return null;
+    }
+
+
+    public void subscribeToTopic(String topicFilter, MerossDevice merossDevice) throws MQTTException {
+        try {
+            Mqtt3Subscribe subscribeMessage = Mqtt3Subscribe.builder()
+                    .topicFilter(topicFilter)
+                    .qos(MqttQos.EXACTLY_ONCE)
+                    .build();
+
+            asyncClient.subscribe(subscribeMessage, publishMessage ->
+                    merossDevice.consumeMessage(this.messageArrived(topicFilter, publishMessage.getPayloadAsBytes())));
+        } catch (Exception e) {
+            throw new MQTTException(e.getMessage());
+        }
+    }
+    public void subscribeToTopic(String topicFilter) throws MQTTException {
+        try {
+            blockingClient
+                        .subscribeWith()
+                        .topicFilter(topicFilter)
+                        .send();
+                receiveMessageAsync(payload ->
+                        log.info(String.format("Global message for %s arrived: %s", topicFilter, payload)), topicFilter);
+        } catch (Exception e) {
+            throw new MQTTException(e.getMessage());
         }
     }
 
-    protected void setStatus(ClientStatus status) {
-        this.clientStatus = status;
+
+
+    public Map messageArrived(String topic, byte[] mqttMessage)  {
+        try {
+            Message message = mapper.readValue(mqttMessage, Message.class);
+            Message.Header header = message.getHeader();
+
+            String stringToHash = String.format("%s%s%s", header.getMessageId(), this.key, header.getTimestamp());
+            String expected_signature = md5DigestAsHex(stringToHash.getBytes(UTF_8)).toLowerCase();
+
+            if (!header.getSign().equals(expected_signature)) {
+                throw new MQTTException("The signature did not match!");
+            }
+
+            //If the message is the RESP for some previous action, process return the control to the "stopped" method.
+            if (this.messageFromSelf(message)) {
+                if (header.getMethod().equals("PUSH") && header.getNamespace() != null) {
+    //                this.handleNamespacePayload(header.getNamespace(), message.getPayload());
+                } else {
+                    log.warn("The following message was unhandled: " + message);
+                }
+            } else {
+                return message.getPayload();
+            }
+        } catch (Exception e) {
+            log.error(e.getMessage(), e);
+        }
+
+        return null;
     }
 
-    protected void handleMessagePayload(Message message) throws MQTTException {
+    @SneakyThrows
+    public String mqttMessage(String method, String namespace, String clientRequestTopic, Map payload) throws MQTTException {
+
+//        blockingClient.connect();
+        byte[] array = new byte[16]; // length is bounded by 16
+        new Random().nextBytes(array);
+        String randomString = new String(array, Charset.forName("UTF-8"));
+        String messageId = md5DigestAsHex(randomString.getBytes(UTF_8)).toLowerCase();
+        long timestamp = System.currentTimeMillis() / 1000;
+        String stringToHash = String.format("%s%s%s", messageId, this.key, timestamp);
+        String signature = md5DigestAsHex(stringToHash.getBytes(UTF_8)).toLowerCase();
+        Message.Header header = new Message.Header()
+                .withFrom(this.clientResponseTopic)
+                .withMessageId(messageId)
+                .withMethod(method)
+                .withNamespace(namespace)
+                .withPayloadVersion(1)
+                .withSign(signature)
+                .withTimestamp(timestamp)
+                .withTimestampMs(123);
+        Message message = new Message().withHeader(header).withPayload(payload);
+        try {
+            final String valueAsString = mapper.writeValueAsString(message);
+            System.out.println("valueAsString = " + valueAsString);
+            blockingClient.publishWith()
+                    .topic(clientRequestTopic)
+                    .payload(valueAsString.getBytes(UTF_8))
+                    .send();
+
+            return "";
+        } catch (JsonProcessingException e) {
+            throw new MQTTException("Error sending message: " + e.getMessage());
+        }
+    }
+
+
+    protected void generateFClientandAppId() {
+        String stringToHash = String.format("%s%s", "API", this.uuid);
+        this.appId = md5DigestAsHex(stringToHash.getBytes(UTF_8));
+        this.clientid = "app:" + appId;
+    }
+
+    void handleMessagePayload(Message message) throws MQTTException {
         Message.Header header = message.getHeader();
 
         String stringToHash = String.format("%s%s%s", header.getMessageId(), this.key, header.getTimestamp());
-        String expected_signature = md5DigestAsHex(stringToHash.getBytes(StandardCharsets.UTF_8)).toLowerCase();
+        String expected_signature = md5DigestAsHex(stringToHash.getBytes(UTF_8)).toLowerCase();
 
         if (!header.getSign().equals(expected_signature)) {
             throw new MQTTException("The signature did not match!");
@@ -102,16 +223,13 @@ public abstract class MqttConnection {
         //If the message is the RESP for some previous action, process return the control to the "stopped" method.
         if (this.messageFromSelf(message)) {
             if (header.getMethod().equals("PUSH") && header.getNamespace() != null) {
-                this.handleNamespacePayload(header.getNamespace(), (Map) message.getPayload());
+                //todo
+//                this.handleNamespacePayload(header.getNamespace(), (Map) message.getPayload());
             } else {
                 log.warn("The following message was unhandled: " + message);
             }
         }
     }
-
-    protected abstract Map executecmd(String method, String namespace, Map payload, long timeout);
-
-    protected abstract void handleNamespacePayload(String namespace, Map payload);
 
     protected boolean messageFromSelf(Message message) {
         try {
@@ -125,17 +243,26 @@ public abstract class MqttConnection {
         return false;
     }
 
-    public enum ClientStatus {
-        INITIALIZED(1),
-        CONNECTING(2),
-        CONNECTED(3),
-        SUBSCRIBED(4),
-        CONNECTIONDROPPED(5);
-        private int status;
-
-        ClientStatus(int status) {
-
-            this.status = status;
+    public Map receiveMessage() throws Exception {
+        try (Mqtt3BlockingClient.Mqtt3Publishes publishes = blockingClient.publishes(SUBSCRIBED)) {
+            Mqtt3Publish publishMessage = publishes.receive();
+            System.out.println("receivedMessage = " + publishMessage);
+            return this.messageArrived(publishMessage.getTopic().toString(), publishMessage.getPayloadAsBytes());
+        } catch (InterruptedException e) {
+            log.error(e.getMessage(),e);
         }
+        return null;
+    }
+    public void receiveMessageAsync(Consumer<Map> consumer, String consumedTopic) throws Exception {
+        asyncClient.publishes((consumedTopic == null) ? ALL : SUBSCRIBED, publishMessage -> {
+            try {
+                final String topic = publishMessage.getTopic().toString();
+                if (consumedTopic == null || topic.equalsIgnoreCase(consumedTopic)) {
+                    consumer.accept(this.messageArrived(topic, publishMessage.getPayloadAsBytes()));
+                }
+            } catch (Exception e) {
+                log.error(e.getMessage(),e);
+            }
+        } );
     }
 }

@@ -1,12 +1,13 @@
 package com.scout24.home.automation.meross.mqtt;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Lists;
 import com.scout24.home.automation.meross.api.AttachedDevice;
 import com.scout24.home.automation.meross.api.NetworkDevice;
-import org.eclipse.paho.client.mqttv3.MqttException;
+import lombok.extern.slf4j.Slf4j;
 
 import java.io.Serializable;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -15,87 +16,56 @@ import static com.scout24.home.automation.meross.mqtt.Abilities.ELECTRICITY;
 import static com.scout24.home.automation.meross.mqtt.Abilities.TOGGLE;
 import static com.scout24.home.automation.meross.mqtt.Abilities.TOGGLEX;
 
+@Slf4j
 public class MerossDevice {
     private static final int CHANNEL_0 = 0;
     private final AttachedDevice device;
     private final MqttConnection connection;
+    private final String clientRequestTopic;
 
     private List<Map> channels;
     private boolean[] state;
 
+    static ObjectMapper mapper = new ObjectMapper();
+
 
     //Cached list of abilities
-    List<?> abilities = new ArrayList<>();
+    List<String> abilities = null;
+    private NetworkDevice networkDevice;
 
-    public MerossDevice(String token, String key, Long userid, AttachedDevice device) throws MqttException {
-        super(key, userid, token, device.getDevice().getUuid(), device.getDevice().getDomain());
-        this.device = device;
-        this.channels = device.getDevice().getChannels();
-        this.state = new boolean[channels.size()];
-
-        this.generateFClientandAppId();
-        this.connectToBroker();
-
-        this.clientrequesttopic = "/appliance/" + this.uuid + "/subscribe";
-        this.clientresponsetopic = "/app/" + this.uuid + "-" + this.appid + "/subscribe";
-        subscribeToTopics();
-    }
-
-    public MerossDevice(AttachedDevice device) throws MqttException {
-        this(device.getToken(), device.getKey(), device.getUserId(), device);
-    }
-
-    public MerossDevice(AttachedDevice device, MqttConnection connection)  {
+    public MerossDevice(AttachedDevice device, MqttConnection connection) throws MQTTException {
         this.device = device;
         this.connection = connection;
+        this.clientRequestTopic = "/appliance/" + device.getUuid() + "/subscribe";
     }
 
-
-    public Map toggle(int status) throws MQTTException, CommandTimeoutException, InterruptedException {
-        ImmutableMap<String, Serializable> payload = ImmutableMap.of("channel", 0, "toggle", ImmutableMap.of("onoff", status));
-        return this.executecmd("SET", TOGGLE.getNamespace(), payload, SHORT_TIMEOUT);
+    public Map toggle(boolean enabled) {
+        ImmutableMap<String, Serializable> payload = ImmutableMap.of(
+                "channel", 0,
+                "toggle", ImmutableMap.of("onoff", enabled? 1 : 0)
+        );
+        return connection.executecmd("SET", TOGGLE.getNamespace(), payload, clientRequestTopic);
     }
 
-    public Map togglex(int channel, int status) throws MQTTException, CommandTimeoutException, InterruptedException {
-        Map<String, Map<String, Integer>> payload = ImmutableMap.of("togglex", ImmutableMap.of("onoff", status, "channel", channel));
-        return this.executecmd("SET", TOGGLEX.getNamespace(), payload, SHORT_TIMEOUT);
+    public Map togglex(int channel, boolean enabled) throws MQTTException, CommandTimeoutException, InterruptedException {
+        Map<String, Serializable> payload = ImmutableMap.of(
+                "togglex", ImmutableMap.of(
+                        "onoff", enabled? 1:0,
+                        "channel", channel,
+                        "lmTime", System.currentTimeMillis()/1000)
+        );
+        return connection.executecmd("SET", TOGGLEX.getNamespace(), payload, clientRequestTopic);
     }
 
-    private Map channelControlImpl(int channel, int status) throws MQTTException, CommandTimeoutException, InterruptedException {
-        if (this.abilities.contains(TOGGLE)) {
-
+    private Map toggleChannel(int channel, boolean status) throws MQTTException, CommandTimeoutException, InterruptedException {
+        if (this.getAbilities().contains(TOGGLE.getNamespace())) {
             return this.toggle(status);
-        } else if (this.abilities.contains(TOGGLEX)) {
+        } else if (this.getAbilities().contains(TOGGLEX.getNamespace())) {
             return this.togglex(channel, status);
 
         } else {
             throw new MQTTException("The current device does not support neither TOGGLE nor TOGGLEX.");
         }
-    }
-
-    public void initializeStatus() throws InterruptedException, CommandTimeoutException, MQTTException {
-        NetworkDevice data = this.getSysData();
-        final NetworkDevice.Digest digest = data.getAll().getDigest();
-        if (digest != null) {
-            for (Object c : digest.getTogglex()) {
-//                state[(int) ((Map) c).get("channel")] = ((Map) c).get("channel"));
-            }
-        } else {
-            final Map control = data.getAll().getControl();
-            if (control != null) {
-                state[0] = Boolean.parseBoolean(((Map) control.get("toggle")).get("'onoff'").toString());
-            }
-        }
-    }
-
-
-    Object getChannelId(Map channel) throws MQTTException {
-        //Otherwise, if the passed channel looks like the channel spec, lookup its array indexindex
-        if (this.channels.contains(channel)) {
-            return this.channels.indexOf(channel);
-        }
-        //In other cases return an error
-        throw new MQTTException("Invalid channel specified.");
     }
 
     private int getChannelId(String channel) throws MQTTException {
@@ -111,41 +81,40 @@ public class MerossDevice {
         throw new MQTTException("Invalid channel specified.");
     }
 
-    public String getDeviceid() {
-        return this.uuid;
-    }
 
-    public NetworkDevice getSysData() throws InterruptedException, CommandTimeoutException, MQTTException {
-        return mapper.convertValue(this.executecmd("GET", "Appliance.System.All", ImmutableMap.of(), LONG_TIMEOUT), NetworkDevice.class);
+    public NetworkDevice getSysData() {
+        if (networkDevice==null) {
+            connection.executecmd("GET", "Appliance.System.All", ImmutableMap.of(), clientRequestTopic);
+            try {
+                final Map map = connection.receiveMessage();
+                networkDevice = mapper.convertValue(map, NetworkDevice.class);
+            } catch (Exception e) {
+                log.error("error retrieving abilities: ", e);
+            }
+        }
+        return networkDevice;
     }
 
     List<Map> getChannels() {
         return this.channels;
     }
 
-    Map getWifilist() throws InterruptedException, CommandTimeoutException, MQTTException {
-        return this.executecmd("GET", "Appliance.Config.WifiList", ImmutableMap.of(), LONG_TIMEOUT);
-    }
-
-    Map gettrace() throws InterruptedException, CommandTimeoutException, MQTTException {
-        return this.executecmd("GET", "Appliance.Config.Trace", ImmutableMap.of(), SHORT_TIMEOUT);
-    }
-
-    Map getdebug() throws InterruptedException, CommandTimeoutException {
-        return this.executecmd("GET", "Appliance.System.Debug", ImmutableMap.of(), SHORT_TIMEOUT);
-    }
-
-    List<?> getAbilities() throws InterruptedException, CommandTimeoutException, MQTTException {
-        //TODO: Make this cached value expire after a bit...
+    public List<String> getAbilities() {
         if (this.abilities == null) {
-            this.abilities = (List<?>)
-                    this.executecmd("GET", "Appliance.System.Ability", ImmutableMap.of(), SHORT_TIMEOUT).get("ability");
+            connection.executecmd("GET", "Appliance.System.Ability", ImmutableMap.of(), clientRequestTopic);
+            try {
+                final Map map = connection.receiveMessage();
+                abilities = Lists.newArrayList(((Map)map.get("ability")).keySet());
+            } catch (Exception e) {
+                log.error("error retrieving abilities: ", e);
+            }
+
         }
         return this.abilities;
     }
 
     Map getReport() throws InterruptedException, CommandTimeoutException {
-        return this.executecmd("GET", "Appliance.System.Report", ImmutableMap.of(), SHORT_TIMEOUT);
+        return connection.executecmd("GET", "Appliance.System.Report", ImmutableMap.of(), clientRequestTopic);
     }
 
     boolean getChannelStatus(String channel) throws MQTTException {
@@ -153,71 +122,45 @@ public class MerossDevice {
         return this.state[c];
     }
 
-    Map turnOnChannel(String channel) throws MQTTException, CommandTimeoutException, InterruptedException {
-        int c = this.getChannelId(channel);
-        return this.channelControlImpl(c, 1);
+    public Map turnOnChannel(int channel) throws MQTTException, CommandTimeoutException, InterruptedException {
+        return this.toggleChannel(channel, true);
     }
 
-    Map turnOffChannel(String channel) throws MQTTException, CommandTimeoutException, InterruptedException {
-        int c = this.getChannelId(channel);
-        return this.channelControlImpl(c, 0);
+    public Map turnOffChannel(int channel) throws MQTTException, CommandTimeoutException, InterruptedException {
+        return this.toggleChannel(channel, true);
     }
 
     Map turnOn(String channel) throws InterruptedException, CommandTimeoutException, MQTTException {
         int c = this.getChannelId(channel);
-        return this.channelControlImpl(c, 1);
+        return this.toggleChannel(c, true);
     }
 
     Map turnOff(String channel) throws InterruptedException, CommandTimeoutException, MQTTException {
         int c = this.getChannelId(channel);
-        return this.channelControlImpl(c, 0);
+        return this.toggleChannel(c, false);
     }
 
     boolean supportsConsumptionReading() throws InterruptedException, CommandTimeoutException, MQTTException {
-        return getAbilities().contains(CONSUMPTIONX);
+        return getAbilities().contains(CONSUMPTIONX.getNamespace());
     }
 
     boolean supportsElectricityReading() throws InterruptedException, CommandTimeoutException, MQTTException {
-        return getAbilities().contains(ELECTRICITY);
+        return getAbilities().contains(ELECTRICITY.getNamespace());
     }
 
     Map getPowerConsumption() throws InterruptedException, CommandTimeoutException, MQTTException {
-        if (getAbilities().contains(CONSUMPTIONX)) {
-            return this.executecmd("GET", CONSUMPTIONX.getNamespace(), ImmutableMap.of(), SHORT_TIMEOUT);
+        if (getAbilities().contains(CONSUMPTIONX.getNamespace())) {
+            return connection.executecmd("GET", CONSUMPTIONX.getNamespace(), ImmutableMap.of(), clientRequestTopic);
         } else return null;
     }
 
     Map getElectricity() throws InterruptedException, CommandTimeoutException, MQTTException {
-        if (getAbilities().contains(ELECTRICITY)) {
-            return this.executecmd("GET", ELECTRICITY.getNamespace(), ImmutableMap.of(), SHORT_TIMEOUT);
+        if (getAbilities().contains(ELECTRICITY.getNamespace())) {
+            return connection.executecmd("GET", ELECTRICITY.getNamespace(), ImmutableMap.of(), clientRequestTopic);
         } else return null;
     }
 
-
-    boolean getState(String channel) throws MQTTException, CommandTimeoutException, InterruptedException {
-        //In order to optimize the network traffic, we don't call the getstatus() api at every request.
-        //On the contrary, we only call it the first time. Then, the rest of the API will silently listen
-        //for state changes and will automatically update the this.state structure listening for
-        //messages of the device.
-        //Such approach, however, has a side effect. If we call TOGGLE/TOGGLEX and immediately after we call
-        //getstatus(), the reported status will be still the old one. This is a race condition because the
-        //"status" RESPONSE will be delivered some time after the TOGGLE REQUEST. It's not a big issue for now,
-        //and synchronizing the two things would be inefficient and probably not very useful.
-        //Just remember to wait some time before testing the status of the item after a toggle.
-        this.statuslock.lock();
-        int c = this.getChannelId(channel);
-
-        if (this.state == null){
-            initializeStatus();
-        }
-        this.statuslock.unlock();
-        return this.state[c];
-    }
-
-
-    @Override
     protected void handleNamespacePayload(String namespace, Map payload) {
-        this.statuslock.lock();
         if (namespace.equals(TOGGLE.getNamespace())) {
             final Map<String, ?> toggle = (Map<String, ?>) payload.get("toggle");
             this.state[MerossDevice.CHANNEL_0] = Boolean.parseBoolean(toggle.get("onoff").toString());
@@ -238,6 +181,24 @@ public class MerossDevice {
         } else {
             log.error("Unknown/Unsupported namespace/command: " + namespace);
         }
-        this.statuslock.unlock();
     }
+
+    public void consumeMessage(Map payload) {
+
+        this.handleNamespacePayload("", payload);
+
+    }
+    //
+//    Map getWifilist() throws InterruptedException, CommandTimeoutException, MQTTException {
+//        return executecmd("GET", "Appliance.Config.WifiList", ImmutableMap.of(), LONG_TIMEOUT, clientresponsetopic, clientRequestTopic);
+//    }
+//
+//    Map getTrace() throws InterruptedException, CommandTimeoutException, MQTTException {
+//        return executecmd("GET", "Appliance.Config.Trace", ImmutableMap.of(), SHORT_TIMEOUT, clientresponsetopic, clientRequestTopic);
+//    }
+//
+//    Map getDebug() throws InterruptedException, CommandTimeoutException {
+//        return executecmd("GET", "Appliance.System.Debug", ImmutableMap.of(), SHORT_TIMEOUT, clientresponsetopic, clientRequestTopic);
+//    }
+
 }
