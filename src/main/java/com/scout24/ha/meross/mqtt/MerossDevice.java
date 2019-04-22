@@ -26,6 +26,7 @@ public class MerossDevice {
 
     //Cached list of abilities
     List<String> abilities = null;
+    //MQTT device
     private NetworkDevice networkDevice;
 
     public MerossDevice(AttachedDevice device, MqttConnection connection) throws MQTTException {
