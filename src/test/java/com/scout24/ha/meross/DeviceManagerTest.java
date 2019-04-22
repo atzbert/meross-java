@@ -38,6 +38,7 @@ public class DeviceManagerTest {
 				System.out.println("deviceUuid = " + deviceUuid + " device = " + attachedDevice);
 			}
 			deviceList.get(TERRASSE).turnOffChannel(3);
+			deviceManager.listenToUpdates();
 		}
 	}
 

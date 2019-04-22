@@ -25,7 +25,7 @@ public class NetworkDevice {
     @Data
     @NoArgsConstructor
     public static class Digest {
-        private ArrayList< Object > togglex = new ArrayList <> ();
+        private ArrayList< Map > togglex = new ArrayList <> ();
         private ArrayList < Object > triggerx = new ArrayList < Object > ();
         private ArrayList < Object > timerx = new ArrayList < Object > ();
     }

@@ -17,7 +17,7 @@ public class DeviceManager {
 	private String email;
 	private String password;
 
-	private final Map<String, MerossDevice> merossDeviceList = Maps.newLinkedHashMap();
+	private Map<String, MerossDevice> merossDeviceList;
 	private MerossHttpClient merossHttpClient;
 	private Map<String, AttachedDevice> deviceList;
 	private MqttConnection connection;
@@ -29,6 +29,7 @@ public class DeviceManager {
 	}
 
 	public DeviceManager initializeDevices() throws MQTTException {
+		merossDeviceList = Maps.newLinkedHashMap();
 		for (String deviceUuid : deviceList.keySet()) {
 			final AttachedDevice attachedDevice = deviceList.get(deviceUuid);
 			log.info("Found device with uuid = " + deviceUuid + " and name = " +
@@ -48,6 +49,28 @@ public class DeviceManager {
 		return merossDeviceList;
 	}
 
+	public boolean listenToUpdates()  {
+		if (merossDeviceList == null || merossDeviceList.isEmpty()) {
+			log.warn("No devices fetched, not listening to any updates");
+		} else {
+			try {
+				connection.onGlobalMessage(map -> {
+					log.info("received message");
+					for (String uuid : merossDeviceList.keySet()) {
+						try {
+							connection.subscribeToDeviceTopic(merossDeviceList.get(uuid));
+						} catch (MQTTException e) {
+							log.error("Error subscribing to device topic", e);
+						}
+					}
+				});
+				return true;
+			} catch (Exception e) {
+				log.error("Error receiving message from broker", e);
+			}
+		}
+		return false;
+	}
 	public boolean connect()  {
 		try {
 			merossHttpClient = new MerossHttpClient(email, password);

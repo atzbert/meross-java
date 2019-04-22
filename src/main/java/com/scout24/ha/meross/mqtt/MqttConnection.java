@@ -54,6 +54,7 @@ public class MqttConnection {
     private int port = 2001;
     private String clientid = null;
     private String clientResponseTopic;
+    private Consumer<Map> globalMessageConsumer;
 
     public MqttConnection(String key, Long userid, String token, String domain) throws MQTTException {
         this.key = key;
@@ -110,15 +111,22 @@ public class MqttConnection {
     }
 
 
-    public void subscribeToTopic(String topicFilter, MerossDevice merossDevice) throws MQTTException {
+    public void subscribeToDeviceTopic(MerossDevice merossDevice) throws MQTTException {
         try {
+            final String topic = merossDevice.clientRequestTopic;
             Mqtt3Subscribe subscribeMessage = Mqtt3Subscribe.builder()
-                    .topicFilter(topicFilter)
-                    .qos(MqttQos.EXACTLY_ONCE)
+                    .topicFilter(topic)
+                    .qos(MqttQos.AT_LEAST_ONCE)
                     .build();
 
             asyncClient.subscribe(subscribeMessage, publishMessage ->
-                    merossDevice.consumeMessage(this.messageArrived(topicFilter, publishMessage.getPayloadAsBytes())));
+            {
+                try {
+                    merossDevice.consumeMessage(this.messageArrived(topic, publishMessage.getPayloadAsBytes()));
+                } catch (MQTTException e) {
+                    log.error("Error receiving update for " + topic);
+                }
+            });
         } catch (Exception e) {
             throw new MQTTException(e.getMessage());
         }
@@ -129,8 +137,12 @@ public class MqttConnection {
                         .subscribeWith()
                         .topicFilter(topicFilter)
                         .send();
-                receiveMessageAsync(payload ->
-                        log.info(String.format("Global message for %s arrived: %s", topicFilter, payload)), topicFilter);
+                receiveMessageAsync(payload -> {
+                    log.info(String.format("Global message for %s arrived: %s", topicFilter, payload));
+                    if (globalMessageConsumer != null) {
+                        globalMessageConsumer.accept(payload);
+                    }
+                }, topicFilter);
         } catch (Exception e) {
             throw new MQTTException(e.getMessage());
         }
@@ -251,6 +263,9 @@ public class MqttConnection {
             log.error(e.getMessage(),e);
         }
         return null;
+    }
+    public void onGlobalMessage(Consumer<Map> consumer) throws Exception {
+        globalMessageConsumer = consumer;
     }
     public void receiveMessageAsync(Consumer<Map> consumer, String consumedTopic) throws Exception {
         asyncClient.publishes((consumedTopic == null) ? ALL : SUBSCRIBED, publishMessage -> {

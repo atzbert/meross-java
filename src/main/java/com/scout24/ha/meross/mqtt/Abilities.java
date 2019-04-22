@@ -1,5 +1,10 @@
 package com.scout24.ha.meross.mqtt;
 
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+
+@Getter
+@AllArgsConstructor
 public enum  Abilities {
     TOGGLE("Appliance.Control.Toggle"),
     TOGGLEX("Appliance.Control.ToggleX"),
@@ -11,11 +16,16 @@ public enum  Abilities {
 
     private String namespace;
 
-    Abilities(String name) {
-        this.namespace = name;
+    public Abilities forLowercaseName(String name) {
+        return Abilities.valueOf(name.toLowerCase());
     }
 
-    public String getNamespace() {
-        return namespace;
+    public Abilities forNamespace(String name) {
+        for (Abilities value : Abilities.values()) {
+            if(value.namespace.equalsIgnoreCase(name)){
+                return value;
+            }
+        }
+        return null;
     }
 }
