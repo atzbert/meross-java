@@ -19,4 +19,8 @@ public class AttachedDevice {
         this.key = key;
         this.userId = userId;
     }
+
+    public boolean isOnline() {
+        return device.getOnlineStatus() == 1;
+    }
 }

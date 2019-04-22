@@ -123,7 +123,7 @@ public class MerossDevice {
     }
 
     public Map turnOffChannel(int channel) throws MQTTException, CommandTimeoutException, InterruptedException {
-        return this.toggleChannel(channel, true);
+        return this.toggleChannel(channel, false);
     }
 
     Map turnOn(String channel) throws InterruptedException, CommandTimeoutException, MQTTException {

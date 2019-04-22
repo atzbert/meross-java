@@ -44,17 +44,16 @@ public class MerossHttpClient {
     private String password;
     @Getter
     private boolean authenticated;
-    private String userEmail;
 
     public MerossHttpClient(String userEmail, String password) {
         this.email = userEmail;
         this.password = password;
     }
-    Object authenticatedPost(String url, Map<String,String> params_data) throws AuthenticatedPostException {
+    private Object authenticatedPost(String url, Map<String,String> paramsData) throws RestException {
         try {
             String nonce = UUID.randomUUID().toString();
             long timeMillis = System.currentTimeMillis();
-            String loginParams = this.encodeParams(params_data);
+            String loginParams = this.encodeParams(paramsData);
 
             //Generate the md5-hash (called signature)
             String datatosign = _SECRET + timeMillis + nonce + loginParams;
@@ -89,7 +88,7 @@ public class MerossHttpClient {
 
             if (jsondata != null && jsondata.containsKey("info") &&
                     !jsondata.get("info").equals("Success")) {
-                throw new AuthenticatedPostException();
+                throw new RestException("Error authenticating on API Server!");
             }
             return jsondata.get("data");
         } catch (JsonProcessingException e) {
@@ -101,13 +100,13 @@ public class MerossHttpClient {
         return Base64.getEncoder().encodeToString(mapper.writeValueAsBytes(params_data));
     }
 
-    private boolean login() throws AuthenticatedPostException {
+    private boolean login() throws RestException {
         Map<String, String> data = ImmutableMap.of("email", this.email, "password", this.password);
         Map responseData = (Map) this.authenticatedPost(_LOGIN_URL, data);
         this.token = (String) responseData.get("token");
         this.key = (String) responseData.get("key");
         this.userId = Long.parseLong((String) responseData.get("userid"));
-        this.userEmail = (String) responseData.get("email");
+        String userEmail = (String) responseData.get("email");
         this.authenticated = true;
         this.log();
         return true;
@@ -123,14 +122,14 @@ public class MerossHttpClient {
         data.put("version", "6.0");
         try {
             this.authenticatedPost(_LOG_URL, data);
-        } catch (AuthenticatedPostException e) {
-            e.printStackTrace();
+        } catch (RestException e) {
+            log.error(e.getMessage(), e);
         }
     }
 
-    private List<Device> listDevices() throws AuthenticatedPostException, UnauthorizedException {
+    private List<Device> listDevices() throws RestException {
         if (!this.authenticated && !this.login())
-            throw new UnauthorizedException();
+            throw new RestException("Not connected, please authenticate first");
         final List<Map> map = (List<Map>) this.authenticatedPost(_DEV_LIST, ImmutableMap.of());
         return mapper.convertValue(map, new TypeReference<List<Device>>(){});
     }
@@ -146,8 +145,8 @@ public class MerossHttpClient {
                 AttachedDevice wrapped = wrapIt(this.token, this.key, this.userId, device);
                 supportedDevices.add(wrapped);
             }
-        } catch (AuthenticatedPostException | UnauthorizedException e) {
-            e.printStackTrace();
+        } catch (RestException e) {
+            log.error(e.getMessage(), e);
         }
         return supportedDevices;
     }
@@ -162,7 +161,7 @@ public class MerossHttpClient {
                 AttachedDevice wrapped = wrapIt(this.token, this.key, this.userId, device);
                 supportedDevices.put(device.getUuid(), wrapped);
             }
-        } catch (AuthenticatedPostException | UnauthorizedException e) {
+        } catch (RestException e) {
             log.error(e.getMessage(), e);
         }
         return supportedDevices;
@@ -172,7 +171,5 @@ public class MerossHttpClient {
         return new AttachedDevice(device, token, key, userid);
     }
 
-    public static class AuthenticatedPostException extends Exception{}
 
-    public static class UnauthorizedException extends Exception{}
 }

@@ -25,20 +25,20 @@ public class DeviceManagerTest {
 	public static void main(String[] args) throws Exception, CommandTimeoutException {
 		final String email = args[0].split(" ")[0];
 		final String password = args[1].split(" ")[0];
-		DeviceManager deviceManager = DeviceManager.builder()
-				.email(email)
-				.password(password)
-				.build();
-		deviceManager.initialize();
+		DeviceManager deviceManager = new DeviceManager(email, password);
+		if (deviceManager.connect()) {
+			System.out.println("Successfully connected to API and broker, initializing online devices now");
+			deviceManager.initializeDevices();
 
-		final Map<String, MerossDevice> deviceList = deviceManager.getSupportedDevices();
+			final Map<String, MerossDevice> deviceList = deviceManager.getSupportedDevices();
 
-		System.out.println(deviceList);
-		for (String deviceUuid : deviceList.keySet()) {
-			final MerossDevice attachedDevice = deviceList.get(deviceUuid);
-			System.out.println("deviceUuid = " + deviceUuid + " device = " + attachedDevice);
+			System.out.println(deviceList);
+			for (String deviceUuid : deviceList.keySet()) {
+				final MerossDevice attachedDevice = deviceList.get(deviceUuid);
+				System.out.println("deviceUuid = " + deviceUuid + " device = " + attachedDevice);
+			}
+			deviceList.get(TERRASSE).turnOffChannel(3);
 		}
-		deviceList.get(TERRASSE).turnOnChannel(3);
 	}
 
 }
