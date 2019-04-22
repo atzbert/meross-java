@@ -190,7 +190,7 @@ public class MqttConnection {
         Message message = new Message().withHeader(header).withPayload(payload);
         try {
             final String valueAsString = mapper.writeValueAsString(message);
-            System.out.println("valueAsString = " + valueAsString);
+            log.debug("Sending message: " + valueAsString);
             blockingClient.publishWith()
                     .topic(clientRequestTopic)
                     .payload(valueAsString.getBytes(UTF_8))

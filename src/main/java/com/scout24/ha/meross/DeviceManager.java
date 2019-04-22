@@ -27,6 +27,7 @@ public class DeviceManager {
 		this.email = email;
 		this.password = password;
 	}
+
 	public DeviceManager initializeDevices() throws MQTTException {
 		for (String deviceUuid : deviceList.keySet()) {
 			final AttachedDevice attachedDevice = deviceList.get(deviceUuid);
@@ -34,6 +35,7 @@ public class DeviceManager {
 					attachedDevice.getDevName() + " with channels = " + attachedDevice.getChannels());
 			if (attachedDevice.isOnline()) {
 				MerossDevice device = new MerossDevice(attachedDevice, connection);
+				device.initialize();
 				merossDeviceList.put(deviceUuid, device);
 			} else {
 				log.info("Did not connect to broker for offline device " + deviceUuid);

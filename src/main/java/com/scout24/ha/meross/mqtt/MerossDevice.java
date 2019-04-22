@@ -13,6 +13,7 @@ import java.util.Map;
 
 @Slf4j
 public class MerossDevice {
+    private static ObjectMapper mapper = new ObjectMapper();
     private static final int CHANNEL_0 = 0;
     private final AttachedDevice device;
     private final MqttConnection connection;
@@ -21,13 +22,17 @@ public class MerossDevice {
     private List<Map> channels;
     private boolean[] state;
 
-    static ObjectMapper mapper = new ObjectMapper();
+    public void initialize() throws MQTTException {
+        this.mqttDevice = getSysData();
+        this.abilities = getAbilities();
+    }
 
 
     //Cached list of abilities
-    List<String> abilities = null;
+    private List<String> abilities;
     //MQTT device
-    private NetworkDevice networkDevice;
+
+    private NetworkDevice mqttDevice;
 
     public MerossDevice(AttachedDevice device, MqttConnection connection) throws MQTTException {
         this.device = device;
@@ -78,35 +83,28 @@ public class MerossDevice {
     }
 
 
-    public NetworkDevice getSysData() {
-        if (networkDevice==null) {
-            connection.executecmd("GET", "Appliance.System.All", ImmutableMap.of(), clientRequestTopic);
-            try {
-                final Map map = connection.receiveMessage();
-                networkDevice = mapper.convertValue(map, NetworkDevice.class);
-            } catch (Exception e) {
-                log.error("error retrieving abilities: ", e);
-            }
+    private NetworkDevice getSysData() throws MQTTException {
+        connection.executecmd("GET", "Appliance.System.All", ImmutableMap.of(), clientRequestTopic);
+        try {
+            final Map map = connection.receiveMessage();
+            return mapper.convertValue(map, NetworkDevice.class);
+        } catch (Exception e) {
+            throw new MQTTException("error retrieving state: " + e.getMessage());
         }
-        return networkDevice;
     }
 
     List<Map> getChannels() {
         return this.channels;
     }
 
-    public List<String> getAbilities() {
-        if (this.abilities == null) {
+    private List<String> getAbilities() throws MQTTException {
+        try {
             connection.executecmd("GET", "Appliance.System.Ability", ImmutableMap.of(), clientRequestTopic);
-            try {
-                final Map map = connection.receiveMessage();
-                abilities = Lists.newArrayList(((Map)map.get("ability")).keySet());
-            } catch (Exception e) {
-                log.error("error retrieving abilities: ", e);
-            }
-
+            final Map map = connection.receiveMessage();
+            return Lists.newArrayList(((Map<String, ?>)map.get("ability")).keySet());
+        } catch (Exception e) {
+            throw new MQTTException("error fetching device abilities: " + e.getMessage());
         }
-        return this.abilities;
     }
 
     Map getReport() throws InterruptedException, CommandTimeoutException {
