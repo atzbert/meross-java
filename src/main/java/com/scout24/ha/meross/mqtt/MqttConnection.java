@@ -1,4 +1,4 @@
-package com.scout24.home.automation.meross.mqtt;
+package com.scout24.ha.meross.mqtt;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -12,8 +12,7 @@ import com.hivemq.client.mqtt.mqtt3.message.publish.Mqtt3Publish;
 import com.hivemq.client.mqtt.mqtt3.message.subscribe.Mqtt3Subscribe;
 import lombok.Getter;
 import lombok.SneakyThrows;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 
 import java.nio.charset.Charset;
 import java.util.Map;
@@ -30,6 +29,7 @@ import static org.springframework.util.DigestUtils.md5DigestAsHex;
 /**
  * Initially created by Tino on 16.04.19.
  */
+@Slf4j
 public class MqttConnection {
 
     static final long SHORT_TIMEOUT = 5;
@@ -37,7 +37,6 @@ public class MqttConnection {
     static ObjectMapper mapper = new ObjectMapper();
     protected Lock statuslock = new ReentrantLock();
     protected byte[] ackresponse = null;
-    Logger log = LoggerFactory.getLogger(getClass().getName());
     //Topic where important notifications are pushed (needed if any other client is dealing with the same device)
     String usertopic = null;
 

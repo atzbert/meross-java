@@ -1,20 +1,15 @@
-package com.scout24.home.automation.meross.mqtt;
+package com.scout24.ha.meross.mqtt;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
-import com.scout24.home.automation.meross.api.AttachedDevice;
-import com.scout24.home.automation.meross.api.NetworkDevice;
+import com.scout24.ha.meross.rest.AttachedDevice;
+import com.scout24.ha.meross.rest.NetworkDevice;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.Serializable;
 import java.util.List;
 import java.util.Map;
-
-import static com.scout24.home.automation.meross.mqtt.Abilities.CONSUMPTIONX;
-import static com.scout24.home.automation.meross.mqtt.Abilities.ELECTRICITY;
-import static com.scout24.home.automation.meross.mqtt.Abilities.TOGGLE;
-import static com.scout24.home.automation.meross.mqtt.Abilities.TOGGLEX;
 
 @Slf4j
 public class MerossDevice {
@@ -44,7 +39,7 @@ public class MerossDevice {
                 "channel", 0,
                 "toggle", ImmutableMap.of("onoff", enabled? 1 : 0)
         );
-        return connection.executecmd("SET", TOGGLE.getNamespace(), payload, clientRequestTopic);
+        return connection.executecmd("SET", Abilities.TOGGLE.getNamespace(), payload, clientRequestTopic);
     }
 
     public Map togglex(int channel, boolean enabled) throws MQTTException, CommandTimeoutException, InterruptedException {
@@ -54,13 +49,13 @@ public class MerossDevice {
                         "channel", channel,
                         "lmTime", System.currentTimeMillis()/1000)
         );
-        return connection.executecmd("SET", TOGGLEX.getNamespace(), payload, clientRequestTopic);
+        return connection.executecmd("SET", Abilities.TOGGLEX.getNamespace(), payload, clientRequestTopic);
     }
 
     private Map toggleChannel(int channel, boolean status) throws MQTTException, CommandTimeoutException, InterruptedException {
-        if (this.getAbilities().contains(TOGGLE.getNamespace())) {
+        if (this.getAbilities().contains(Abilities.TOGGLE.getNamespace())) {
             return this.toggle(status);
-        } else if (this.getAbilities().contains(TOGGLEX.getNamespace())) {
+        } else if (this.getAbilities().contains(Abilities.TOGGLEX.getNamespace())) {
             return this.togglex(channel, status);
 
         } else {
@@ -141,30 +136,30 @@ public class MerossDevice {
     }
 
     boolean supportsConsumptionReading() throws InterruptedException, CommandTimeoutException, MQTTException {
-        return getAbilities().contains(CONSUMPTIONX.getNamespace());
+        return getAbilities().contains(Abilities.CONSUMPTIONX.getNamespace());
     }
 
     boolean supportsElectricityReading() throws InterruptedException, CommandTimeoutException, MQTTException {
-        return getAbilities().contains(ELECTRICITY.getNamespace());
+        return getAbilities().contains(Abilities.ELECTRICITY.getNamespace());
     }
 
     Map getPowerConsumption() throws InterruptedException, CommandTimeoutException, MQTTException {
-        if (getAbilities().contains(CONSUMPTIONX.getNamespace())) {
-            return connection.executecmd("GET", CONSUMPTIONX.getNamespace(), ImmutableMap.of(), clientRequestTopic);
+        if (getAbilities().contains(Abilities.CONSUMPTIONX.getNamespace())) {
+            return connection.executecmd("GET", Abilities.CONSUMPTIONX.getNamespace(), ImmutableMap.of(), clientRequestTopic);
         } else return null;
     }
 
     Map getElectricity() throws InterruptedException, CommandTimeoutException, MQTTException {
-        if (getAbilities().contains(ELECTRICITY.getNamespace())) {
-            return connection.executecmd("GET", ELECTRICITY.getNamespace(), ImmutableMap.of(), clientRequestTopic);
+        if (getAbilities().contains(Abilities.ELECTRICITY.getNamespace())) {
+            return connection.executecmd("GET", Abilities.ELECTRICITY.getNamespace(), ImmutableMap.of(), clientRequestTopic);
         } else return null;
     }
 
     protected void handleNamespacePayload(String namespace, Map payload) {
-        if (namespace.equals(TOGGLE.getNamespace())) {
+        if (namespace.equals(Abilities.TOGGLE.getNamespace())) {
             final Map<String, ?> toggle = (Map<String, ?>) payload.get("toggle");
             this.state[MerossDevice.CHANNEL_0] = Boolean.parseBoolean(toggle.get("onoff").toString());
-        } else if (namespace.equals(TOGGLEX.getNamespace())) {
+        } else if (namespace.equals(Abilities.TOGGLEX.getNamespace())) {
             if (payload.get("togglex") instanceof List) {
                 final List<Map> togglex = (List) payload.get("togglex");
                 for (Map map : togglex) {

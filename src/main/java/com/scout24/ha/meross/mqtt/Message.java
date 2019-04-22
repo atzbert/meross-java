@@ -1,4 +1,4 @@
-package com.scout24.home.automation.meross.mqtt;
+package com.scout24.ha.meross.mqtt;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;

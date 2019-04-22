@@ -1,4 +1,4 @@
-package com.scout24.home.automation.meross.api;
+package com.scout24.ha.meross.rest;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;

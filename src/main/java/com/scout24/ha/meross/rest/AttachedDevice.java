@@ -1,4 +1,4 @@
-package com.scout24.home.automation.meross.api;
+package com.scout24.ha.meross.rest;
 
 import lombok.Data;
 import lombok.experimental.Delegate;

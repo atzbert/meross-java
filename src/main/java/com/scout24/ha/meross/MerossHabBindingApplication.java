@@ -1,17 +1,14 @@
-package com.scout24.home.automation.meross;
+package com.scout24.ha.meross;
 
 import com.google.common.collect.Maps;
-import com.scout24.home.automation.meross.api.AttachedDevice;
-import com.scout24.home.automation.meross.api.MerossHttpClient;
-import com.scout24.home.automation.meross.mqtt.CommandTimeoutException;
-import com.scout24.home.automation.meross.mqtt.MerossDevice;
-import com.scout24.home.automation.meross.mqtt.MqttConnection;
-import org.springframework.boot.SpringApplication;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
+import com.scout24.ha.meross.mqtt.CommandTimeoutException;
+import com.scout24.ha.meross.mqtt.MerossDevice;
+import com.scout24.ha.meross.rest.MerossHttpClient;
+import com.scout24.ha.meross.mqtt.MqttConnection;
+import com.scout24.ha.meross.rest.AttachedDevice;
 
 import java.util.Map;
 
-@SpringBootApplication
 public class MerossHabBindingApplication {
 
 	protected static final String SEILZUG = "18112014534925258h0234298f142e7f";
@@ -19,7 +16,6 @@ public class MerossHabBindingApplication {
 	protected static final String SCHLAFZIMMER_LICHT = "1903115105716739080834298f1c9c6e";
 
 	public static void main(String[] args) throws Exception, CommandTimeoutException {
-		SpringApplication.run(MerossHabBindingApplication.class, args);
 		final MerossHttpClient merossHttpClient = new MerossHttpClient(args[0].split(" ")[0], args[1].split(" ")[0]);
 		final Map<String, AttachedDevice> deviceList = merossHttpClient.mapSupportedDevices(false);
 		final Map<String, MerossDevice> merossDeviceList = Maps.newLinkedHashMap();
@@ -34,7 +30,7 @@ public class MerossHabBindingApplication {
 			merossDeviceList.put(deviceUuid, device);
 //			System.out.println("connection.getStatusImpl() = " + connection.getSysData());
 		}
-		merossDeviceList.get(SCHLAFZIMMER_LICHT).turnOnChannel(0);
+		merossDeviceList.get(SCHLAFZIMMER_LICHT).turnOffChannel(0);
 //		merossDeviceList.get(SEILZUG).getAbilities();
 		merossDeviceList.get(SEILZUG).getSysData();
 //		merossDeviceList.get(SEILZUG).togglex(0, true);
