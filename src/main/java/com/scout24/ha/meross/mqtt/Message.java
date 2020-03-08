@@ -28,7 +28,14 @@ import java.util.Map;
  * 		"onoff": 1,
  * 		"lmTime": 1555613747
  *      }
- * 	]
+ * 	],
+ *      "garageDoor": [
+ *            {
+ *              "channel": 0,
+ *              "open": 1,
+ *              "lmTime": 1583598475
+ *      }
+ *      ]
  *   }
  * }
  */

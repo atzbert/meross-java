@@ -28,6 +28,7 @@ public class NetworkDevice {
         private ArrayList< Map > togglex = new ArrayList <> ();
         private ArrayList < Object > triggerx = new ArrayList < Object > ();
         private ArrayList < Object > timerx = new ArrayList < Object > ();
+        private ArrayList < Object > garageDoor = new ArrayList < Object > ();
     }
     @Data
     @NoArgsConstructor
